@@ -1,12 +1,11 @@
 import os
 import sys
-
+import numpy as np
 import matplotlib.pyplot as plt
 from directory_tree import DisplayTree
 from fastai.vision.all import show_image, show_titled_image
 from tqdm.auto import tqdm
-
-
+from torchvision import transforms
 
 def get_dataloader_bar(dataloader, color="green"):
     """
@@ -221,6 +220,52 @@ def quick_debug(img):
     print(
         f"Range of pixel values: [{img.min():.1f}, {img.max():.1f}]"
     )  # Should be around [-2, 2]# Should be around [-2, 2]
+
+
+class Denormalize:
+    def __init__(self, mean, std):
+
+        new_mean = [-m / s for m, s in zip(mean, std)]
+        new_std = [1 / s for s in std]
+
+        self.denormalize = transforms.Normalize(mean=new_mean, std=new_std)
+
+    def __call__(self, tensor):
+        return self.denormalize(tensor)
+
+
+def visual_exploration(dataset, num_rows=2, num_cols=4):
+    """Visual exploration of the dataset by displaying random samples in a grid."""
+    # Calculate total number of samples to display
+    total_samples = num_rows * num_cols
+
+    # Randomly select indices from the dataset without replacement
+    # This ensures we get a diverse sample of the dataset
+    indices = np.random.choice(len(dataset), total_samples, replace=False)
+
+    # Create a grid of subplots with appropriate figure size
+    # Each subplot gets (3 x 4) inches per image for good visibility
+    fig, axes = get_grid(num_rows, num_cols, figsize=(num_cols * 3, num_rows * 4))
+
+    # Iterate through each axis and corresponding random index
+    for ax, idx in zip(axes.flatten(), indices):
+        # Load image and label from dataset at the random index
+        image, label = dataset[idx]
+
+        # Get human-readable description for the label
+        description = dataset.get_label_description(label)
+
+        # Create a combined label string with both number and description
+        label = f"{label} - {description}"
+
+        # Create info string showing index and image dimensions
+        info = f"Index: {idx} Size: {image.size}"
+
+        # Plot the image on the current axis with label and info
+        plot_img(image, label=label, info=info, ax=ax)
+
+    # Display the complete grid of images
+    plt.show()
 
 
 # def get_mean_std():
