@@ -1,0 +1,8 @@
+torch~=2.9.1+cu130
+matplotlib~=3.10.6
+ipython~=9.5.0
+pandas~=2.2.3
+numpy~=2.2.6
+pillow~=11.3.0
+scikit-learn~=1.7.2
+torchvision~=0.24.1+cu130
