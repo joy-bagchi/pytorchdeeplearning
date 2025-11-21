@@ -1,4 +1,5 @@
 import math
+from functools import wraps
 from typing import Optional
 
 import matplotlib as mpl
@@ -6,11 +7,21 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
 import torch
+import numpy as np
+
 # from torch import optim, nn
 from torch.utils.data import DataLoader, random_split
 from torchvision import datasets, transforms
 from torchvision.datasets import ImageFolder
+from tqdm.auto import tqdm
 
+
+# Custom colors (reusable)
+PINK = "#F65B66"  # Pink
+BLUE = "#237B94"  # Blue
+DARK_BLUE = "#1C74EB"# Dark Blue
+YELLOW = "#FAB901" # Yellow
+PURPLE = "#A12F9D" # Purple
 
 
 # = DLAI plots style =
@@ -736,6 +747,7 @@ def train_and_evaluate_model(model, optimizer, loss_fcn, train_dataloader, val_d
     # Return the collected training history
     return history
 
+
 def train_model(model, optimizer, loss_fcn, train_dataloader, device, n_epochs):
     """
     Orchestrates the training of a model for a specified number of epochs.
@@ -779,7 +791,6 @@ def train_model(model, optimizer, loss_fcn, train_dataloader, device, n_epochs):
 
     # Close the progress bar and print a final message upon completion
     pbar.close("Training complete!\n")
-
 
 
 def get_p_bar(n_epochs):
@@ -894,8 +905,156 @@ def plot_results(learning_rates, accuracies):
     # Display the final plot
     plt.show()
     
+def load_resnet_table():
+    """Loads ResNet model performance data from a CSV file.
+
+    This function reads a specific CSV file named 'resnet_results.csv'
+    and returns its contents as a pandas DataFrame.
+
+    Returns:
+        A pandas DataFrame containing the ResNet results.
+    """
+    # Read the CSV file into a pandas DataFrame, using the first column as the index.
+    resnet_results = pd.read_csv("resnet_results.csv", index_col=0)
+    # Return the loaded DataFrame.
+    return resnet_results
 
 
+class PbarEpoch:
+    """
+    Manages a tqdm progress bar for a single training epoch.
 
+    This class encapsulates the creation, updating, and closing of a progress bar,
+    making it easier to monitor training progress on a per-epoch basis.
+    """
+
+    def __init__(self, train_loader, steps, epoch):
+        """
+        Initializes the progress bar for the epoch.
+
+        Args:
+            train_loader: The DataLoader for the training dataset.
+            steps: The total number of steps to display on the progress bar.
+            epoch: The current epoch number for the description.
+        """
+        # Calculate how many batches correspond to a single step in the progress bar.
+        self.batches_per_step = len(train_loader) // steps
+        # Initialize the tqdm progress bar with its total steps and description.
+        self.pbar = tqdm(total=steps, desc=f"Train Epoch {epoch}")
+
+    def update(self, batch_idx, loss):
+        """
+        Updates the progress bar with the latest batch information.
+
+        Args:
+            batch_idx: The index of the current batch being processed.
+            loss: The loss value from the current batch.
+        """
+        # Advance the progress bar by one step.
+        self.pbar.update(1)
+        # Set the postfix text to display the current loss and batch number.
+        self.pbar.set_postfix(current_loss=loss.item(), batch=batch_idx + 1)
+        # Print the current loss and batch number to the console.
+        print(f"Current Loss: {loss.item():.4f}, Batch: {batch_idx + 1}")
+
+    def close(self):
+        """
+        Closes the progress bar at the end of the epoch.
+        """
+        # Finalize and close the tqdm progress bar instance.
+        self.pbar.close()
+
+
+def plot_efficiency_analysis(results_df):
+    """
+    Generates and displays a scatter plot to analyze model efficiency.
+
+    This function visualizes the relationship between model accuracy, inference time,
+    and size. Each model is represented as a point, where the x-axis is the
+    inference time, the y-axis is the accuracy, and the size of the point
+    corresponds to the model's file size. Annotations are placed dynamically
+    based on marker size.
+
+    Args:
+        results_df: A pandas DataFrame containing the performance metrics for
+                    each model. It must include the columns 'inference_time_ms',
+                    'accuracy', and 'model_size_mb'.
+    """
+    # Set up the plot figure and get its axes for more control over elements.
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Define a base font size for labels.
+    label_fontsize = 15 + (10 / 5)
+
+    # Define a list of colors for the plot points.
+    colors = [PINK, BLUE, DARK_BLUE, YELLOW, PURPLE]
+    # Initialize a counter to cycle through the color list.
+    i = 0
+
+    # Iterate over each model's data in the DataFrame.
+    for name, row in results_df.iterrows():
+        # Define the marker area based on the model's size.
+        marker_area = row["model_size_mb"] * 10.15
+
+        # Create a scatter plot point for the current model.
+        ax.scatter(
+            row["inference_time_ms"],
+            row["accuracy"],
+            s=marker_area,
+            label=str(round(row["model_size_mb"], 1)) + " MB - " + name,
+            c=colors[i],
+        )
+
+        # Calculate the marker's radius in points to position the text label.
+        marker_radius_pts = np.sqrt(marker_area)
+        # Calculate the vertical offset to place the text just below the marker.
+        vertical_offset_pts = - (marker_radius_pts * 1.02)
+
+        # Add a text annotation showing the exact accuracy value.
+        ax.annotate(
+            f"{row['accuracy']:.2f}",
+            # Set the annotation's anchor point to the center of the marker.
+            xy=(row["inference_time_ms"], row["accuracy"]),
+            # Set the text's position using an offset in points.
+            xytext=(0, vertical_offset_pts),
+            # Specify that the offset is measured in points.
+            textcoords="offset points",
+            fontsize=label_fontsize,
+            ha="center",
+            # Vertically align the top of the text to the offset point.
+            va="top",
+        )
+        # Move to the next color for the next model.
+        i += 1
+
+    # Set the title of the plot.
+    ax.set_title("Model Efficiency: Inference Time vs Accuracy")
+    # Set the label for the x-axis.
+    ax.set_xlabel("Inference Time (ms)")
+    # Set the label for the y-axis.
+    ax.set_ylabel("Accuracy")
+
+    # Dynamically calculate the x-axis limit with some padding.
+    xmax = results_df["inference_time_ms"].max() * 1.15
+    # Apply the calculated x-axis limit.
+    ax.set_xlim(0, xmax)
+    # Set the y-axis limit with a small padding at the top.
+    ax.set_ylim(0, 1.05)
+
+    # Explicitly define the tick marks on the y-axis for consistency.
+    ax.set_yticks(np.arange(0, 1.1, 0.2))
+
+    # Create the plot's legend with the defined font size.
+    legend = ax.legend(fontsize=label_fontsize)
+    # Ensure all markers in the legend have a consistent size for clarity.
+    for handle in legend.legend_handles:
+        handle._sizes = [80]
+
+    # Display a grid on the plot for better readability.
+    ax.grid(True)
+    # Adjust the plot to ensure all elements fit without overlapping.
+    fig.tight_layout()
+    # Show the final generated plot.
+    plt.show()
 
 
